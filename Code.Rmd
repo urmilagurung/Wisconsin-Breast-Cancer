@@ -1,0 +1,543 @@
+---
+title: "Report : Wisconsin Breast Cancer Database"
+author: "Urmila Gurung"
+header-includes:
+  - \usepackage{float}
+output:
+  pdf_document:
+    fig_caption: TRUE
+    number_sections: TRUE
+    df_print: "kable"
+    extra_dependencies: ["float"]
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE, warning = FALSE, message = FALSE}
+library(knitr)
+opts_chunk$set(fig.pos = "H", out.extra = "",echo = TRUE)
+opts_knit$set(root.dir= normalizePath('..'))
+
+```
+
+```{r conversion}
+#install.packages("mlbench")
+library(mlbench)
+data(BreastCancer)
+dim(BreastCancer)
+
+#Removing NA Value
+BreastCancer <- na.omit(BreastCancer)
+
+## Create new variable for recoded data
+# recode 'class' variable based
+BreastCancer_conv = data.frame(BreastCancer[,-(11)],Class=as.integer(BreastCancer$Class)*2)
+
+# Convert factors to quantitative variables
+BreastCancer_conv$Id <- as.integer(BreastCancer_conv$Id)
+BreastCancer_conv$Cl.thickness <- as.numeric(BreastCancer_conv$Cl.thickness)
+BreastCancer_conv$Cell.size <- as.numeric(BreastCancer_conv$Cell.size)
+BreastCancer_conv$Cell.shape <- as.numeric(BreastCancer_conv$Cell.shape)
+BreastCancer_conv$Marg.adhesion <- as.numeric(BreastCancer_conv$Marg.adhesion)
+BreastCancer_conv$Epith.c.size <- as.numeric(BreastCancer_conv$Epith.c.size)
+BreastCancer_conv$Bare.nuclei <- as.numeric(BreastCancer_conv$Bare.nuclei)
+BreastCancer_conv$Bl.cromatin <- as.numeric(BreastCancer_conv$Bl.cromatin)
+BreastCancer_conv$Normal.nucleoli <- as.numeric(BreastCancer_conv$Normal.nucleoli)
+BreastCancer_conv$Mitoses <- as.numeric(BreastCancer_conv$Mitoses)
+
+table(BreastCancer_conv$Class)
+```
+
+```{r redundant_observation, include=FALSE}
+#Redundant observations
+duplicated_id <- BreastCancer_conv %>% 
+  filter(duplicated(.))
+
+# Number of redundant observations
+nrow(duplicated_id)
+
+```
+
+```{r check_redundant_observation, include=FALSE}
+# check duplicated observations
+BreastCancer_conv %>%
+  filter(Id %in% duplicated_id$Id) %>%
+  arrange(Id) %>%
+  kable() %>%
+  kable_material_dark() %>% 
+  kable_styling(bootstrap_options = "responsive", full_width = F, position = "left") %>% 
+  scroll_box(width = "800px")
+
+```
+
+
+```{r remove_redundant_observation, include=FALSE}
+library(tidyverse)
+library(dplyr)
+
+#Code to remove redundant observations and identifier column
+BreastCancer_conv <- BreastCancer_conv %>% 
+  filter(!duplicated(.)) 
+#%>%dplyr::select(-Id)
+
+glimpse(BreastCancer_conv)
+```
+
+```{r final_check_redundant_observation, include=FALSE}
+#Redundant observations
+duplicated_id1 <- BreastCancer_conv %>% 
+  filter(duplicated(.))
+
+# Number of redundant observations
+nrow(duplicated_id1)
+
+```
+
+```{r tumor_class, echo=TRUE}
+# Plot distribution
+ggplot(BreastCancer_conv, aes(x = Class, fill = as.character(Class))) +
+  geom_bar(show.legend = FALSE) +
+  geom_label(aes(label = paste(..count.., " (", round(prop.table(..count..) * 100, 2), "%)")), stat = "count", position = position_stack(vjust = 0.75), show.legend = FALSE) +
+  labs(title = "Tumor Class Distribution", x = "Class", y = "Frequency")
+```
+
+
+```{r mean_sd}
+# Mean
+apply(BreastCancer_conv[,2:11],2,mean)
+#Standard Deviation
+apply(BreastCancer_conv[,2:11],2,sd)
+
+#summary(BreastCancer_conv[,2:11])
+```
+```{r setup, include=TRUE}
+knitr::kable(
+cov(BreastCancer_conv[,2:11]),  
+caption = "Variance-Covariance Matrix")
+```
+
+```{r setup, echo=TRUE}
+ggpairs(BreastCancer_conv[2:10],
+        mapping = ggplot2::aes(colour=as.character(BreastCancer_conv[,11]),alpha=.2),
+        title = "Correlation Matrix between Response Variables",
+        progress = FALSE)
+```
+## logistic regression 
+
+```{r}
+
+## Pick out and scale predictor variables
+X1 = BreastCancer_conv[,2:10]
+# Scaling
+#X1 = scale(X1orig)
+# Pick out response variable
+y = BreastCancer_conv[,11]
+## Combine to create new data frame
+BreastCancer_data = data.frame(X1, y)
+BreastCancer_data$y <- as.factor(BreastCancer_data$y)
+## Print first few rows:
+as.factor(BreastCancer_data$y)
+head(BreastCancer_data)
+```
+```{r}
+## Store n and p
+n = nrow(BreastCancer_data); p = ncol(BreastCancer_data) - 1
+n
+p
+```
+
+
+
+```{r}
+## Load the bestglm package
+library(bestglm)
+## Apply best subset selection
+best_fit_AIC = bestglm(BreastCancer_data, family=binomial, IC="AIC")
+best_fit_BIC = bestglm(BreastCancer_data, family=binomial, IC="BIC")
+
+```
+
+
+```{r}
+## Examine the results
+best_fit_AIC$Subsets
+best_fit_BIC$Subsets
+
+```
+
+```{r}
+## Identify best-fitting models
+(best_AIC = best_fit_AIC$ModelReport$Bestk)
+(best_BIC = best_fit_BIC$ModelReport$Bestk)
+
+best_fit_AIC
+best_fit_BIC
+```
+
+
+```{r}
+## Create multi-panel plotting device
+par(mfrow=c(1,2))
+## Produce plots, highlighting optimal value of k
+plot(0:p, best_fit_AIC$Subsets$AIC, xlab="Number of predictors", ylab="AIC", type="b")
+points(best_AIC, best_fit_AIC$Subsets$AIC[best_AIC+1], col="red", pch=16)
+plot(0:p, best_fit_BIC$Subsets$BIC, xlab="Number of predictors", ylab="BIC", type="b")
+points(best_BIC, best_fit_BIC$Subsets$BIC[best_BIC+1], col="red", pch=16)
+
+```
+
+```{r}
+pstar = 6
+## Check which predictors are in the 6-predictor model
+best_fit_AIC$Subsets[pstar+1,]
+
+```
+
+```{r}
+## Construct a reduced data set containing only the selected predictor
+indices = as.logical(best_fit_AIC$Subsets[pstar+1, 2:(p+1)])
+BreastCancer_data_red = data.frame(X1[,indices], y)
+BreastCancer_data_red$y <- as.factor(BreastCancer_data_red$y)
+## Obtain regression coefficients for this model
+logreg1_fit = glm(y ~ ., data=BreastCancer_data_red, family="binomial")
+summary(logreg1_fit)
+```
+```{r}
+#p-value
+round((summary(logreg1_fit)$coef)[,4],10)
+#log odd coefficient
+round(coef(logreg1_fit),10)
+#coefficient
+round(exp(coef(logreg1_fit)),10)
+```
+
+```{r}
+# Create a new data frame for best dataset
+BreastCancer_best <- data.frame(BreastCancer_data_red,stringsAsFactors = FALSE)
+# filter dataframe
+set.seed(100)
+split = sample(c(rep(0, 0.7 * nrow(BreastCancer_best)), rep(1, 0.3 * nrow(BreastCancer_best))))
+BreastCancer_best_train <- BreastCancer_best[split == 0,] 
+BreastCancer_best_test <- BreastCancer_best[split == 1,]
+```
+
+```{r}
+# filter dataframe for total
+set.seed(100)
+split1 = sample(c(rep(0, 0.7 * nrow(BreastCancer_data)), rep(1, 0.3 * nrow(BreastCancer_data))))
+BreastCancer_train <- BreastCancer_data[split1 == 0,] 
+BreastCancer_test <- BreastCancer_data[split1 == 1,]
+```
+```{r}
+# Validation Set Using Best Logistic
+## Fit model using training data
+logreg1_train = glm(y~., data=BreastCancer_best_train, family="binomial")
+summary(logreg1_train)
+## Compute fitted values for the validation data:
+phat_test = predict(logreg1_train, BreastCancer_best_test, type="response")
+## Compute test error
+yhat_test = ifelse(phat_test > 0.5, 4, 2)
+(confusion = table(Observed=BreastCancer_best_test$y, Predicted=yhat_test))
+## Compute test error
+1- mean(BreastCancer_best_test$y != yhat_test)
+
+```
+```{r}
+
+
+```
+```{r}
+# Validation Set Using Logistic
+## Fit model using training data
+logreg1_train1 = glm(y~., data=BreastCancer_train, family="binomial")
+#summary(logreg1_train1)
+## Compute fitted values for the validation data:
+phat_test = predict(logreg1_train1, BreastCancer_test, type="response")
+## Compute test error
+yhat_test = ifelse(phat_test > 0.5, 4, 2)
+(confusion = table(Observed=BreastCancer_test$y, Predicted=yhat_test))
+## Compute test error
+mean(BreastCancer_test$y != yhat_test)
+```
+
+```{r}
+##LASSO
+## Choose grid of values for the tuning parameter
+set.seed(100)
+grid = 10^seq(3, -3, length.out=100)
+## Fit a model with LASSO penalty for each value of the tuning parameter
+lasso_fit = glmnet(X1, y, family="binomial", alpha=1, standardize=FALSE, lambda=grid)
+```
+
+```{r}
+beta_hate = coef(lasso_fit)
+## Lots of shrinkage
+grid[1]
+beta_hate[,1]
+```
+```{r}
+## Some shrinkage
+grid[75]
+beta_hate[,75]
+```
+
+```{r}
+## Very little shrinkage
+grid[100]
+beta_hate[,100]
+```
+
+```{r}
+plot(lasso_fit, xvar="lambda", col=rainbow(p), label=TRUE)
+```
+```{r}
+set.seed(100)
+lasso_cv_fit = cv.glmnet(as.matrix(X1), y, alpha=1, standardize=FALSE, lambda=grid, nfolds=10)
+## Which tuning parameter was the minimum?
+(which(lasso_cv_fit$lambda == lasso_cv_fit$lambda.min))
+## Identify the optimal value for the tuning parameter
+(lambda_lasso_min = lasso_cv_fit$lambda.min)
+```
+
+```{r}
+plot(lasso_cv_fit)
+```
+```{r}
+## Identify the optimal value for the tuning parameter
+(lambda_lasso_min = lasso_cv_fit$lambda.min)
+
+which_lasso_lasso = which(lasso_cv_fit$lambda == lambda_lasso_min)
+## Find the parameter estimates associated with optimal value of the tuning parameter
+coef(lasso_fit, s=lambda_lasso_min)
+```
+
+
+
+```{r}
+x_train = model.matrix(y~., BreastCancer_train)[,-1]
+
+x_test = model.matrix(y~., BreastCancer_test)[,-1]
+
+y_train = BreastCancer_train %>%
+  dplyr::select(y) %>%
+  unlist() %>%
+  as.numeric()*2
+
+y_test = BreastCancer_test %>%
+  dplyr::select(y) %>%
+  unlist() %>%
+  as.numeric()*2
+## LASSO
+set.seed(100)
+grid = 10^seq(1, -1, length.out=100)
+## Perform cross-validation over the training data to select tuning parameter
+lasso_cv_train = cv.glmnet(x_train, y_train, family="binomial", alpha=1, standardize=FALSE, lambda=grid, type.measure="class")
+## Identify the optimal value for the tuning parameter
+(lambda_lasso_min_train = lasso_cv_train$lambda.min)
+which_lambda_lasso_train = which(lasso_cv_train$lambda == lambda_lasso_min_train)
+
+## Fit logistic regression model with LASSO penalty to training data:
+lasso_train = glmnet(x_train,y_train, family="binomial",
+alpha=1, standardize=FALSE, lambda=lambda_lasso_min_train)
+
+## Compute fitted values for the validation data:
+phat_test = predict(lasso_train, x_test, s=lambda_lasso_min_train, type="response")
+yhat_test = ifelse(phat_test > 0.5, 4, 2)
+## Compute test error
+mean(BreastCancer_test$y != yhat_test)
+(confusion = table(Observed=BreastCancer_test$y, Predicted=yhat_test))
+coef(lasso_train, s=lambda_lasso_min_train)
+```
+```{r}
+x_train = model.matrix(y~., BreastCancer_best_train)[,-1]
+
+x_test = model.matrix(y~., BreastCancer_best_test)[,-1]
+
+y_train = BreastCancer_best_train %>%
+  dplyr::select(y) %>%
+  unlist() %>%
+  as.numeric()*2
+
+y_test = BreastCancer_best_train %>%
+  dplyr::select(y) %>%
+  unlist() %>%
+  as.numeric()*2
+## LASSO
+set.seed(100)
+grid = 10^seq(1, -1, length.out=100)
+## Perform cross-validation over the training data to select tuning parameter
+lasso_cv_train = cv.glmnet(x_train, y_train, family="binomial", alpha=1, standardize=FALSE, lambda=grid, type.measure="class")
+## Identify the optimal value for the tuning parameter
+(lambda_lasso_min_train = lasso_cv_train$lambda.min)
+which_lambda_lasso_train = which(lasso_cv_train$lambda == lambda_lasso_min_train)
+
+## Fit logistic regression model with LASSO penalty to training data:
+lasso_train = glmnet(x_train,y_train, family="binomial",
+alpha=1, standardize=FALSE, lambda=lambda_lasso_min_train)
+
+## Compute fitted values for the validation data:
+phat_test = predict(lasso_train, x_test, s=lambda_lasso_min_train, type="response")
+yhat_test = ifelse(phat_test > 0.5, 4, 2)
+## Compute test error
+mean(BreastCancer_best_test$y != yhat_test)
+(confusion = table(Observed=BreastCancer_best_test$y, Predicted=yhat_test))
+coef(lasso_train, s=lambda_lasso_min_train)
+```
+
+Linear discriminant analysis
+
+
+```{r}
+## Load the nclSLR package
+library(nclSLR)
+## Perform LDA on the training data - note that we need to convert the vector of predictors
+## into a matrix because the linDA function expects its variables argument to be a matrix
+## or data frame
+linDA(variables=as.matrix(BreastCancer_best_train[,1:6],ncol=6), group = BreastCancer_best_train$y)
+
+```
+
+
+```{r}
+# Confusion Matrix and  Error
+
+## Load MASS package
+library(MASS)
+## Fit the LDA classifier using the training data
+lda_train = lda(y~., data=BreastCancer_best_train)
+
+## TRAIN
+## Compute fitted values for the validation data
+lda_test1 = predict(lda_train, BreastCancer_best_test)
+yhat_test1 = lda_test1$class
+## Calculate (Train) confusion matrix
+(confusion1 = table(Observed=BreastCancer_best_test$y, Predicted=yhat_test1))
+
+sum(diag(confusion1)/sum(confusion1))
+
+# Test Error
+1 - mean(BreastCancer_best_test$y == yhat_test1)
+ldahist(data = lda_test1$x,g=lda_test1$class)
+```
+
+```{r}
+plot(x = lda_test$x, y = lda_test$class, col = as.numeric(BreastCancer_best_test$y)+4, ylab = "Class", xlab = "Coefficients of LDA")
+```
+```{r}
+# 10- FOLD Cross validation LDA
+set.seed(100)
+K <-10
+folds <- cut(seq(1,nrow(BreastCancer_data)),breaks = K, labels = FALSE)
+
+cv.lda <- sapply(1:K, FUN=function(i){
+  testID <- which(folds==i, arr.ind=TRUE)
+  test <- BreastCancer_data[testID,]
+  train <- BreastCancer_data[-testID,]
+  ldaf <- lda(y~., data=train)
+  lda.pred <- predict(ldaf, test)
+  cv.est.lda <- mean(test$y != lda.pred$class)
+  return(cv.est.lda)
+})
+
+mean(cv.lda)
+```
+```{r}
+# 10- FOLD Cross validation LDA BEST
+set.seed(100)
+K <- 10
+folds <- cut(seq(1,nrow(BreastCancer_data_red)),breaks = K, labels = FALSE)
+
+cv.lda <- sapply(1:K, FUN=function(i){
+  testID <- which(folds==i, arr.ind=TRUE)
+  test <- BreastCancer_data_red[testID,]
+  train <- BreastCancer_data_red[-testID,]
+  ldaf <- lda(y~., data=train)
+  #print(summary(ldaf))
+  lda.pred <- predict(ldaf, test)
+  cv.est.lda <- mean(test$y != lda.pred$class)
+  return(cv.est.lda)
+})
+
+mean(cv.lda)
+```
+```{r}
+# 10- FOLD Cross validation LOGISTIC
+set.seed(100)
+K <- 10
+folds <- cut(seq(1,nrow(BreastCancer_data_red)),breaks = K, labels = FALSE)
+
+cv.logistic <- sapply(1:K, FUN=function(i){
+  testID <- which(folds==i, arr.ind=TRUE)
+  #print(testID)
+  test <- BreastCancer_data[testID,]
+  train <- BreastCancer_data[-testID,]
+  glmf <- glm(y~., data=train,family="binomial")
+  #print(summary(glmf))
+  glm.pred <- predict(glmf, test, type="response")
+  glm.predf <- ifelse(glm.pred > 0.5, 4, 2)
+  cv.est.glm <- mean(test$y != glm.predf)
+  return(cv.est.glm)
+})
+mean(cv.logistic)
+```
+```{r}
+
+set.seed(100)
+K <- 10
+folds <- cut(seq(1,nrow(BreastCancer_data_red)),breaks = K, labels = FALSE)
+
+# 10- FOLD Cross validation LOGISTIC BEST
+cv.best <- sapply(1:K, FUN=function(i){
+  testID <- which(folds==i, arr.ind=TRUE)
+  test <- BreastCancer_data_red[testID,]
+  train <- BreastCancer_data_red[-testID,]
+  bestf <- glm(y~., data=train,family="binomial")
+  #print(summary(bestf))
+  best.pred <- predict(bestf, test, type="response")
+  best.predf <- ifelse(best.pred > 0.5, 4, 2)
+  cv.est.best <- mean(test$y != best.predf)
+  return(cv.est.best)
+})
+mean(cv.best)
+
+```
+
+
+```{r}
+
+# 10- FOLD Cross validation LASSO
+set.seed(100)
+K=10
+cv.lasso <- sapply(1:K, FUN=function(i){
+  ## Choose grid of values for the tuning parameter
+  testID <- which(folds==i, arr.ind=TRUE)
+  test <- BreastCancer_data[testID,]
+  train <- BreastCancer_data[-testID,]
+  x_train = model.matrix(y~., test)[,-1]
+  x_test = model.matrix(y~., train)[,-1]
+  y_train = train %>%
+    dplyr::select(y) %>%
+    unlist() %>%
+    as.numeric()*2
+  y_test = test %>%
+    dplyr::select(y) %>%
+    unlist() %>%
+    as.numeric()*2
+  ## Perform cross-validation over the training data to select tuning parameter
+  set.seed(100)
+  grid1 = 100^seq(3, -3, length.out=100)
+  print(y_test)
+  lassop <- cv.glmnet(x_train, y_train, family="binomial", alpha=1, standardize=FALSE, lambda=grid1, type.measure="class")
+  ## Identify the optimal value for the tuning parameter
+  print(lambda_lasso_min_trainp = lassop$lambda.min)
+  which_lambda_lasso_trainp = which(lassop$lambda == lambda_lasso_min_trainp)
+  ## Fit logistic regression model with LASSO penalty to training data:
+  lassof <- glmnet(x_train, y_train, family="binomial", alpha=1, standardize=FALSE, lambda=lambda_lasso_min_trainp)
+  ## Compute fitted values for the validation data:
+  lasso.pred <- predict(lassof, x_test, s=lambda_lasso_min_trainp,type="response")
+  lasso.predf <- ifelse(lasso.pred > 0.5, 4, 2)
+  cv.est.lasso <- mean(test$y != lasso.predf)
+  return(cv.est.lasso)
+})
+mean(cv.lasso)
+```
+
